@@ -136,4 +136,5 @@ In addition to that, extra sensors are created that allow you to monitor battery
 | 7/Apr/24 | - Updated README |
 | 12/Jun/25 | - Various bugfixes to allow for newer Home Assistant versions (2025.3.3 and above) and to allow config flow fixes since blocking issues.
 | 13/Jun/25 | - Implementing error code description to display words for the error |
+| 17/Jul/25 | - Fix to use updated manifest in HASS to pull latest git library for Automower-BLE
 
