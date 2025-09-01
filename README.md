@@ -3,6 +3,10 @@
 ![GitHub issues by-label](https://img.shields.io/github/issues/andyb2000/HACS-husqvarna_automower_ble)
 ![GitHub contributors](https://img.shields.io/github/contributors/andyb2000/HACS-husqvarna_automower_ble)
 
+# IMPORTANT NOTICE - 1st September 2025
+*** IMPORTANT: I will probably not continue supporting this, due to constant changes in Home Assistant, it's libraries and ESPHome bluetooth proxy which seems to keep breaking libraries/functionality, I have written an alternative that uses MQTT from a raspberry pi client, please take a look here as it will probably be much easier to implement and support going forward as it's not reliant on ESPHOME bluetooth proxy - https://github.com/andyb2000/AutoMower-BLE-MQTT
+
+
 # HACS-husqvarna_automower_ble - Custom integration for Husqvarna Bluetooth automowers
 
 This is the home-assistant integration based on @alistair23 BLE implementation of Husqvarna bluetooth mowers
