@@ -120,6 +120,10 @@ class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, bytes]]):
             data["errorCode"] = await self.mower.command("GetError")
             _LOGGER.debug("errorCode: " + str(data["errorCode"]))
 
+
+            data["signalStrength"] = await self.mower.command("GetSignalStrength")
+            _LOGGER.debug("signalStrength: " + str(data["signalStrength"]))
+
             data["NumberOfMessages"] = await self.mower.command("GetNumberOfMessages")
             _LOGGER.debug("NumberOfMessages: " + str(data["NumberOfMessages"]))
 
