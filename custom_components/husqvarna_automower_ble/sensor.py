@@ -98,8 +98,8 @@ MOWER_SENSORS = [
         icon="mdi:repeat-variant",
     ),
         SensorEntityDescription(
-        name="Signal Strength",
-        key="signalStrength",
+        name="Cutting Height",
+        key="cuttingHeight",
         unit_of_measurement=None,
         device_class=None,
         state_class=None,
