@@ -1,4 +1,4 @@
-automower-ble==0.1.33
+automower-ble==0.2.7
 homeassistant>=2025.1.4
 pip>=24.1,<25
 ruff==0.5.0
