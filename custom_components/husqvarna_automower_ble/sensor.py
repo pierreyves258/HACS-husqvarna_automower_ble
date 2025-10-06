@@ -97,15 +97,6 @@ MOWER_SENSORS = [
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:repeat-variant",
     ),
-        SensorEntityDescription(
-        name="Cutting Height",
-        key="cuttingHeight",
-        unit_of_measurement=None,
-        device_class=None,
-        state_class=None,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:wifi",
-    ),
     SensorEntityDescription(
         name="Total cutting blade usage",
         key="totalChargingTime",

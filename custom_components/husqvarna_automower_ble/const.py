@@ -11,7 +11,7 @@ CONF_CLIENT_ID = "client_id"
 STARTUP_MESSAGE = f"""
 -------------------------------------------------------------------
 {NAME}
-Custom component by @andyb2000
+Custom component by @andyb2000 & @pierreyves258
 -------------------------------------------------------------------
 """
 ERROR_CODE_DESCRIPTIONS = {
