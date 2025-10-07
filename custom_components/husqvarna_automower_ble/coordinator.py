@@ -2,114 +2,102 @@
 
 from __future__ import annotations
 
-from datetime import timedelta, datetime
-import logging
-from typing import Any
+from datetime import timedelta
+from typing import TYPE_CHECKING
 
 from automower_ble.mower import Mower
+from automower_ble.protocol import ResponseResult
 from bleak import BleakError
 from bleak_retry_connector import close_stale_connections_by_address
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 
-_LOGGER = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from . import HusqvarnaConfigEntry
 
 SCAN_INTERVAL = timedelta(seconds=60)
 
 
-class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, bytes]]):
+class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
     """Class to manage fetching data."""
 
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: HusqvarnaConfigEntry,
         mower: Mower,
         address: str,
-        model: str,
         channel_id: str,
-        serial: str,
+        model: str,
     ) -> None:
         """Initialize global data updater."""
         super().__init__(
             hass=hass,
-            logger=_LOGGER,
+            logger=LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=SCAN_INTERVAL,
         )
         self.address = address
+        self.channel_id = channel_id
         self.model = model
         self.mower = mower
-        self.channel_id = channel_id
-        self.serial = serial
-        self._last_successful_update = None
-        self._last_data = None
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and any connection."""
-        _LOGGER.debug("Shutdown")
+        LOGGER.debug("Shutdown")
         await super().async_shutdown()
         if self.mower.is_connected():
             await self.mower.disconnect()
 
     async def _async_find_device(self):
-        _LOGGER.debug("Trying to reconnect")
+        LOGGER.debug("Trying to reconnect")
         await close_stale_connections_by_address(self.address)
 
-        _LOGGER.debug("bluetooth connect...")
         device = bluetooth.async_ble_device_from_address(
             self.hass, self.address, connectable=True
         )
-        _LOGGER.debug("back from async_ble_device_from_address")
-        if not device:
-            _LOGGER.debug("Can't find device")
-            raise UpdateFailed("Can't find device")
 
         try:
-            if not await self.mower.connect(device):
-                _LOGGER.debug("failed to connect in self.mower.connect")
+            if await self.mower.connect(device) is not ResponseResult.OK:
                 raise UpdateFailed("Failed to connect")
-        except (TimeoutError, BleakError) as ex:
-            _LOGGER.debug("except hit from ble connect")
-            raise UpdateFailed("Failed to connect") from ex
+        except BleakError as err:
+            raise UpdateFailed("Failed to connect") from err
 
-    async def _async_update_data(self) -> dict[str, bytes]:
+    async def _async_update_data(self) -> dict[str, str | int]:
         """Poll the device."""
-        _LOGGER.debug("Polling device")
+        LOGGER.debug("Polling device")
 
-        data: dict[str, bytes] = {}
+        data: dict[str, str | int] = {}
 
         try:
             if not self.mower.is_connected():
                 await self._async_find_device()
-        except (TimeoutError, BleakError) as ex:
-            raise UpdateFailed("Failed to connect") from ex
+        except BleakError as err:
+            raise UpdateFailed("Failed to connect") from err
 
         try:
             data["battery_level"] = await self.mower.battery_level()
-            _LOGGER.debug("battery level: " + str(data["battery_level"]))
-#            if data["battery_level"] is None:
-#                await self._async_find_device()
-#                raise UpdateFailed("Error getting data from device")
+            LOGGER.debug("battery_level" + str(data["battery_level"]))
+            if data["battery_level"] is None:
+                await self._async_find_device()
+                raise UpdateFailed("Error getting data from device")
 
             data["activity"] = await self.mower.mower_activity()
-            _LOGGER.debug("activity: " + str(data["activity"]))
-#            if data["activity"] is None:
-#                await self._async_find_device()
-#                raise UpdateFailed("Error getting data from device")
+            LOGGER.debug("activity:" + str(data["activity"]))
+            if data["activity"] is None:
+                await self._async_find_device()
+                raise UpdateFailed("Error getting data from device")
 
             data["state"] = await self.mower.mower_state()
-            _LOGGER.debug("state: " + str(data["state"]))
-#            if data["state"] is None:
-#                await self._async_find_device()
-#                raise UpdateFailed("Error getting data from device")
+            LOGGER.debug("state:" + str(data["state"]))
+            if data["state"] is None:
+                await self._async_find_device()
+                raise UpdateFailed("Error getting data from device")
 
             data["next_start_time"] = await self.mower.mower_next_start_time()
             _LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
@@ -143,32 +131,10 @@ class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, bytes]]):
             data["last_message"] = await self.mower.command("GetMessage", messageId=0)
             _LOGGER.debug("last_message: " + str(data["last_message"]))
 
-            self._last_successful_update = datetime.now()
-            self._last_data = data
 
-        except (TimeoutError, BleakError) as ex:
-            _LOGGER.error("Error getting data from device")
-            if self._last_data and (datetime.now() - self._last_successful_update < timedelta(hours=1)):
-                _LOGGER.debug("Failed to fetch data, using last known good values from the past 1hr")
-                return self._last_data
-            else:
-                await self._async_find_device()
-                raise UpdateFailed("Error getting data from device") from ex
+        except BleakError as err:
+            LOGGER.error("Error getting data from device")
+            await self._async_find_device()
+            raise UpdateFailed("Error getting data from device") from err
 
-        _LOGGER.debug("return from coordinator with data")
         return data
-
-
-class HusqvarnaAutomowerBleEntity(CoordinatorEntity[HusqvarnaCoordinator]):
-    """Coordinator entity for Husqvarna Automower Bluetooth."""
-
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator: HusqvarnaCoordinator, context: Any = None) -> None:
-        """Initialize coordinator entity."""
-        super().__init__(coordinator, context)
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.mower.is_connected()

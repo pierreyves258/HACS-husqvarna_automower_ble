@@ -1,8 +1,8 @@
-"""Demo platform that has a couple fake lawn mowers."""
+"""The Husqvarna Autoconnect Bluetooth lawn mower platform."""
 
 from __future__ import annotations
 
-import logging
+from automower_ble.protocol import MowerActivity, MowerState, ResponseResult
 
 from homeassistant.components import bluetooth
 from homeassistant.components.lawn_mower import (
@@ -10,120 +10,112 @@ from homeassistant.components.lawn_mower import (
     LawnMowerEntity,
     LawnMowerEntityFeature,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN, MANUFACTURER
-from .coordinator import HusqvarnaAutomowerBleEntity, HusqvarnaCoordinator
+from . import HusqvarnaConfigEntry
+from .const import LOGGER
+from .coordinator import HusqvarnaCoordinator
+from .entity import HusqvarnaAutomowerBleEntity
 
-_LOGGER = logging.getLogger(__name__)
-
-FEATURES = (
-    LawnMowerEntityFeature.PAUSE
-    | LawnMowerEntityFeature.START_MOWING
-    | LawnMowerEntityFeature.DOCK
-)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    config_entry: HusqvarnaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up AutomowerLawnMower integration from a config entry."""
-    coordinator: HusqvarnaCoordinator = hass.data[DOMAIN][config_entry.entry_id]
-    model = coordinator.model
+    coordinator = config_entry.runtime_data
     address = coordinator.address
 
     async_add_entities(
         [
             AutomowerLawnMower(
                 coordinator,
-                "automower" + model + "_" + address,
-                model,
-                FEATURES,
+                address,
             ),
         ]
     )
 
+
 class AutomowerLawnMower(HusqvarnaAutomowerBleEntity, LawnMowerEntity):
     """Husqvarna Automower."""
+
+    _attr_name = None
+    _attr_supported_features = (
+        LawnMowerEntityFeature.PAUSE
+        | LawnMowerEntityFeature.START_MOWING
+        | LawnMowerEntityFeature.DOCK
+    )
 
     def __init__(
         self,
         coordinator: HusqvarnaCoordinator,
-        unique_id: str,
-        name: str,
-        features: LawnMowerEntityFeature = LawnMowerEntityFeature(0),
+        address: str,
     ) -> None:
         """Initialize the lawn mower."""
         super().__init__(coordinator)
-        self._attr_name = name
-        self._attr_unique_id = unique_id
-        self._attr_supported_features = features
-        self._attr_activity = LawnMowerActivity.ERROR
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.serial)},
-            manufacturer=MANUFACTURER,
-            model=coordinator.model,
-        )
+        self._attr_unique_id = str(address)
 
     def _get_activity(self) -> LawnMowerActivity | None:
         """Return the current lawn mower activity."""
         if self.coordinator.data is None:
             return None
 
-        state = str(self.coordinator.data["state"])
-        activity = str(self.coordinator.data["activity"])
-
-        _LOGGER.debug("mower state = " + state)
-        _LOGGER.debug("mower activity = " + activity)
+        state = self.coordinator.data["state"]
+        activity = self.coordinator.data["activity"]
 
         if state is None or activity is None:
             return None
-        match state:
-            case "5":
-                return LawnMowerActivity.PAUSED
-            case "2" | "0" | "1":
-                return LawnMowerActivity.ERROR
-            case "7" | "6" | "4":
-                match activity:
-                    case "1" | "5":
-                        return LawnMowerActivity.DOCKED
-                    case "2" | "3":
-                        return LawnMowerActivity.MOWING
-                    case "4":
-                        return LawnMowerActivity.RETURNING
-                    case "6":
-                        return LawnMowerActivity.ERROR
+
+        if state == MowerState.PAUSED:
+            return LawnMowerActivity.PAUSED
+        if state in (MowerState.STOPPED, MowerState.OFF, MowerState.WAIT_FOR_SAFETYPIN):
+            # This is actually stopped, but that isn't an option
+            return LawnMowerActivity.ERROR
+        if state == MowerState.PENDING_START and activity == MowerActivity.NONE:
+            # This happens when the mower is safety stopped and we try to send a
+            # command to start it.
+            return LawnMowerActivity.ERROR
+        if state in (
+            MowerState.RESTRICTED,
+            MowerState.IN_OPERATION,
+            MowerState.PENDING_START,
+        ):
+            if activity in (
+                MowerActivity.CHARGING,
+                MowerActivity.PARKED,
+                MowerActivity.NONE,
+            ):
+                return LawnMowerActivity.DOCKED
+            if activity in (MowerActivity.GOING_OUT, MowerActivity.MOWING):
+                return LawnMowerActivity.MOWING
+            if activity == MowerActivity.GOING_HOME:
+                return LawnMowerActivity.RETURNING
         return LawnMowerActivity.ERROR
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        _LOGGER.debug("AutomowerLawnMower: _handle_coordinator_update")
-        self._update_attr()
-        super()._handle_coordinator_update()
+        LOGGER.debug("AutomowerLawnMower: _handle_coordinator_update")
 
-    @callback
-    def _update_attr(self) -> None:
         self._attr_activity = self._get_activity()
         self._attr_available = self._attr_activity is not None
+        super()._handle_coordinator_update()
 
     async def async_start_mowing(self) -> None:
         """Start mowing."""
-        _LOGGER.debug("Starting mower")
+        LOGGER.debug("Starting mower")
 
         if not self.coordinator.mower.is_connected():
             device = bluetooth.async_ble_device_from_address(
                 self.coordinator.hass, self.coordinator.address, connectable=True
             )
-            if not await self.coordinator.mower.connect(device):
+            if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
         await self.coordinator.mower.mower_resume()
-        if self._attr_activity == LawnMowerActivity.DOCKED:
+        if self._attr_activity is LawnMowerActivity.DOCKED:
             await self.coordinator.mower.mower_override()
         await self.coordinator.async_request_refresh()
 
@@ -132,13 +124,13 @@ class AutomowerLawnMower(HusqvarnaAutomowerBleEntity, LawnMowerEntity):
 
     async def async_dock(self) -> None:
         """Start docking."""
-        _LOGGER.debug("Start docking")
+        LOGGER.debug("Start docking")
 
         if not self.coordinator.mower.is_connected():
             device = bluetooth.async_ble_device_from_address(
                 self.coordinator.hass, self.coordinator.address, connectable=True
             )
-            if not await self.coordinator.mower.connect(device):
+            if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
         await self.coordinator.mower.mower_park()
@@ -149,13 +141,13 @@ class AutomowerLawnMower(HusqvarnaAutomowerBleEntity, LawnMowerEntity):
 
     async def async_pause(self) -> None:
         """Pause mower."""
-        _LOGGER.debug("Pausing mower")
+        LOGGER.debug("Pausing mower")
 
         if not self.coordinator.mower.is_connected():
             device = bluetooth.async_ble_device_from_address(
                 self.coordinator.hass, self.coordinator.address, connectable=True
             )
-            if not await self.coordinator.mower.connect(device):
+            if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
         await self.coordinator.mower.mower_pause()
@@ -163,4 +155,3 @@ class AutomowerLawnMower(HusqvarnaAutomowerBleEntity, LawnMowerEntity):
 
         self._attr_activity = self._get_activity()
         self.async_write_ha_state()
-
