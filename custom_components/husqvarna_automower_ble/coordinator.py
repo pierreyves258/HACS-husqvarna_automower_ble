@@ -100,36 +100,36 @@ class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
                 raise UpdateFailed("Error getting data from device")
 
             data["next_start_time"] = await self.mower.mower_next_start_time()
-            _LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
+            LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
 #            if data["next_start_time"] is None:
 #                await self._async_find_device()
 #                raise UpdateFailed("Error getting data from device")
 
             data["errorCode"] = await self.mower.command("GetError")
-            _LOGGER.debug("errorCode: " + str(data["errorCode"]))
+            LOGGER.debug("errorCode: " + str(data["errorCode"]))
 
             data["NumberOfMessages"] = await self.mower.command("GetNumberOfMessages")
-            _LOGGER.debug("NumberOfMessages: " + str(data["NumberOfMessages"]))
+            LOGGER.debug("NumberOfMessages: " + str(data["NumberOfMessages"]))
 
             data["RemainingChargingTime"] = await self.mower.command("GetRemainingChargingTime")
-            _LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
+            LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
 
             # workaround for issue21
             try:
                 data["statistics"] = await self.mower.command("GetAllStatistics")
-                _LOGGER.debug("statuses: " + str(data["statistics"]))
+                LOGGER.debug("statuses: " + str(data["statistics"]))
             except ValueError as e:
                 if "Data length mismatch" in str(e):
-                    _LOGGER.debug("Known fail on GetAllStatistics - skipping")
+                    LOGGER.debug("Known fail on GetAllStatistics - skipping")
                     data["statistics"] = None
                 else:
                     raise  # Re-raise the exception if it's not the known ValueError
 
             data["operatorstate"] = await self.mower.command("IsOperatorLoggedIn")
-            _LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
+            LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
 
             data["last_message"] = await self.mower.command("GetMessage", messageId=0)
-            _LOGGER.debug("last_message: " + str(data["last_message"]))
+            LOGGER.debug("last_message: " + str(data["last_message"]))
 
 
         except BleakError as err:
